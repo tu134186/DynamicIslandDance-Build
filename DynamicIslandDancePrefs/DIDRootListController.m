@@ -149,7 +149,8 @@ static void DIDNotifyChanged(void) {
     }
     for (NSDictionary *e in entries) {
         NSString *name = e[@"name"];
-        NSString *title = e[@"builtin"].boolValue ? [NSString stringWithFormat:@"%@  ·内置", name] : name;
+        BOOL builtin = [e[@"builtin"] boolValue];
+        NSString *title = builtin ? [NSString stringWithFormat:@"%@  ·内置", name] : name;
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
             [self setPreferenceValue:name specifier:specifier];
             [self reloadSpecifier:specifier animated:YES];
