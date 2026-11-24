@@ -11,7 +11,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"1.0.0";
+static NSString *const DIDVersion     = @"1.1.0";
 static NSString *const DIDPrefPath    = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDImageRoot   = @"/var/mobile/DynamicIsland";
@@ -86,7 +86,80 @@ static NSArray<UIImage *> *gDIDFramesEye;
 static NSString *gDIDFrameKeyDance;
 static NSString *gDIDFrameKeyEye;
 
-static NSString *DIDKindName(NSInteger kind) { return kind == 0 ? @"dance" : @"eye"; }
+static NSString *DIDKindName(NSInteger kind) {
+    return kind == 0 ? @"dance" : (kind == 1 ? @"eye" : @"mask");
+}
+
+// 内置素材随插件包一起安装（rootless 在 /var/jb 下，无根在 / 下）
+static NSArray<NSString *> *DIDBundledRoots(void) {
+    return @[@"/var/jb/Library/Application Support/DynamicIslandDance",
+             @"/Library/Application Support/DynamicIslandDance"];
+}
+
+static NSString *DIDBundledRoot(void) {
+    static NSString *cached;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        for (NSString *root in DIDBundledRoots()) {
+            BOOL isDir = NO;
+            if ([[NSFileManager defaultManager] fileExistsAtPath:root isDirectory:&isDir] && isDir) {
+                cached = root; break;
+            }
+        }
+    });
+    return cached;
+}
+
+// 返回 { 用户主题目录, 内置主题目录 } 中所有可用主题名（去重、排序）
+static NSArray<NSString *> *DIDAvailableThemes(NSInteger kind) {
+    NSMutableSet<NSString *> *set = [NSMutableSet set];
+    NSMutableArray<NSString *> *roots = [NSMutableArray array];
+    [roots addObject:[DIDImageRoot stringByAppendingPathComponent:DIDKindName(kind)]];
+    NSString *b = DIDBundledRoot();
+    if (b) [roots addObject:[b stringByAppendingPathComponent:DIDKindName(kind)]];
+    for (NSString *root in roots) {
+        for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:root error:NULL]) {
+            if ([name hasPrefix:@"."]) continue;
+            BOOL isDir = NO;
+            NSString *full = [root stringByAppendingPathComponent:name];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:full isDirectory:&isDir] && isDir) [set addObject:name];
+        }
+    }
+    return [[set allObjects] sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+}
+
+static NSString *DIDDefaultTheme(NSInteger kind) {
+    NSArray<NSString *> *all = DIDAvailableThemes(kind);
+    return all.count ? all.firstObject : nil;
+}
+
+// 在用户目录找不到就回退到内置目录
+static NSString *DIDThemeDir(NSInteger kind, NSString *folder) {
+    if (folder.length == 0) return nil;
+    NSString *user = [[DIDImageRoot stringByAppendingPathComponent:DIDKindName(kind)] stringByAppendingPathComponent:folder];
+    BOOL isDir = NO;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:user isDirectory:&isDir] && isDir) return user;
+    NSString *b = DIDBundledRoot();
+    if (b) {
+        NSString *bundled = [[b stringByAppendingPathComponent:DIDKindName(kind)] stringByAppendingPathComponent:folder];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:bundled isDirectory:&isDir] && isDir) return bundled;
+    }
+    return nil;
+}
+
+static NSString *DIDMaskPath(NSString *folder) {
+    if (folder.length == 0) return nil;
+    NSString *user = [DIDImageRoot stringByAppendingPathComponent:
+                      [NSString stringWithFormat:@"mask/%@/Mask.png", folder]];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:user]) return user;
+    NSString *b = DIDBundledRoot();
+    if (b) {
+        NSString *p = [b stringByAppendingPathComponent:
+                       [NSString stringWithFormat:@"mask/%@/Mask.png", folder]];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:p]) return p;
+    }
+    return nil;
+}
 
 static NSInteger DIDFileNumber(NSString *name) {
     NSMutableString *digits = [NSMutableString string];
@@ -105,15 +178,17 @@ static BOOL DIDFileIsImage(NSString *path) {
 
 static NSArray<UIImage *> *DIDLoadFrames(NSInteger kind) {
     NSString *folder = DIDString(kind == 0 ? @"selectedDanceFolder" : @"selectedEyeFolder");
+    if (folder.length == 0) folder = DIDDefaultTheme(kind);
     if (folder.length == 0) return nil;
+
+    NSString *dir = DIDThemeDir(kind, folder);
+    if (dir == nil) return nil;
 
     NSArray<UIImage *> *cached = kind == 0 ? gDIDFramesDance : gDIDFramesEye;
     NSString *cachedKey = kind == 0 ? gDIDFrameKeyDance : gDIDFrameKeyEye;
     NSString *key = [NSString stringWithFormat:@"%ld|%@", (long)kind, folder];
     if (cached && [cachedKey isEqualToString:key]) return cached;
 
-    NSString *dir = [DIDImageRoot stringByAppendingPathComponent:
-                     [NSString stringWithFormat:@"%@/%@", DIDKindName(kind), folder]];
     NSArray<NSString *> *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL];
     NSMutableArray<NSString *> *files = [NSMutableArray array];
     for (NSString *n in names) {
@@ -248,10 +323,10 @@ static BOOL DIDPillIsRecording(UIView *pill) {
 #pragma mark - 专辑封面圆形旋转
 
 static CALayer *DIDMaskLayerForSize(CGSize size, NSString *folder) {
-    if (!DIDBool(@"enableMaskLayer", YES) || folder.length == 0) return nil;
-    NSString *path = [DIDImageRoot stringByAppendingPathComponent:
-                      [NSString stringWithFormat:@"mask/%@/Mask.png", folder]];
-    UIImage *mask = [UIImage imageWithContentsOfFile:path];
+    if (!DIDBool(@"enableMaskLayer", YES)) return nil;
+    if (folder.length == 0) folder = DIDDefaultTheme(2);
+    NSString *path = DIDMaskPath(folder);
+    UIImage *mask = path ? [UIImage imageWithContentsOfFile:path] : nil;
     if (!mask || !mask.CGImage) return nil;
 
     static NSMutableDictionary<NSString *, CALayer *> *cache;

@@ -6,6 +6,51 @@ static NSString *const DIDNotify = @"com.minis.didance.changed";
 static NSString *const DIDDefaultPlist = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static NSString *const DIDMediaRoot = @"/var/mobile/DynamicIsland";
 
+static NSArray<NSString *> *DIDBundledRoots(void) {
+    return @[@"/var/jb/Library/Application Support/DynamicIslandDance",
+             @"/Library/Application Support/DynamicIslandDance"];
+}
+
+static NSString *DIDBundledRoot(void) {
+    for (NSString *root in DIDBundledRoots()) {
+        BOOL isDir = NO;
+        if ([[NSFileManager defaultManager] fileExistsAtPath:root isDirectory:&isDir] && isDir) return root;
+    }
+    return nil;
+}
+
+// 合并内置 + 用户目录里的主题，返回 名称 -> 是否内置 的有序数组
+static NSArray<NSDictionary *> *DIDThemeEntries(NSString *kind) {
+    NSMutableArray<NSDictionary *> *out = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    NSString *bundled = DIDBundledRoot();
+    NSArray<NSString *> *roots = @[bundled ? [bundled stringByAppendingPathComponent:kind] : @"",
+                                   [DIDMediaRoot stringByAppendingPathComponent:kind]];
+    NSArray<NSNumber *> *builtinFlag = @[@YES, @NO];
+    for (NSUInteger i = 0; i < roots.count; i++) {
+        NSString *root = roots[i];
+        BOOL isDir = NO;
+        if (root.length == 0 || ![[NSFileManager defaultManager] fileExistsAtPath:root isDirectory:&isDir] || !isDir) continue;
+        BOOL builtin = builtinFlag[i].boolValue;
+        for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:root error:NULL]) {
+            if ([name hasPrefix:@"."] || [seen containsObject:name]) continue;
+            BOOL d = NO;
+            if (![[NSFileManager defaultManager] fileExistsAtPath:[root stringByAppendingPathComponent:name] isDirectory:&d] || !d) continue;
+            [seen addObject:name];
+            [out addObject:@{@"name": name, @"builtin": @(builtin)}];
+        }
+    }
+    [out sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [a[@"name"] localizedStandardCompare:b[@"name"]];
+    }];
+    return out;
+}
+
+static NSString *DIDDefaultThemeName(NSString *kind) {
+    NSArray<NSDictionary *> *entries = DIDThemeEntries(kind);
+    return entries.count ? entries.firstObject[@"name"] : nil;
+}
+
 static id DIDPref(NSString *key) {
     CFPropertyListRef v = CFPreferencesCopyAppValue((__bridge CFStringRef)key,
                                                     (__bridge CFStringRef)DIDDomain);
@@ -85,6 +130,7 @@ static void DIDNotifyChanged(void) {
                                                     edit:nil];
     [spec setProperty:key forKey:@"key"];
     [spec setProperty:kind forKey:@"didFolderKind"];
+    [spec setProperty:title forKey:@"didTitle"];
     [spec setProperty:@(YES) forKey:@"didFolderRow"];
     [spec setProperty:@"showFolderPicker:" forKey:@"action"];
     return spec;
@@ -94,30 +140,27 @@ static void DIDNotifyChanged(void) {
 
 - (void)showFolderPicker:(PSSpecifier *)specifier {
     NSString *kind = [specifier propertyForKey:@"didFolderKind"];
-    NSString *dir = [DIDMediaRoot stringByAppendingPathComponent:kind];
-    NSArray *all = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL];
-    NSMutableArray *folders = [NSMutableArray array];
-    for (NSString *name in all) {
-        if ([name hasPrefix:@"."]) continue;
-        BOOL isDir = NO;
-        NSString *full = [dir stringByAppendingPathComponent:name];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:full isDirectory:&isDir] && isDir) {
-            [folders addObject:name];
-        }
-    }
-    [folders sortUsingSelector:@selector(localizedStandardCompare:)];
-
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:specifier.name
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:[specifier propertyForKey:@"didTitle"]
                                                                   message:nil
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"不使用（关闭）" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *a) {
-        [self setPreferenceValue:@"" specifier:specifier];
-        [self reloadSpecifier:specifier animated:YES];
-    }]];
-    for (NSString *name in folders) {
-        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
+    NSArray<NSDictionary *> *entries = DIDThemeEntries(kind);
+    if (entries.count == 0) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"没有找到任何主题" style:UIAlertActionStyleDefault handler:nil]];
+    }
+    for (NSDictionary *e in entries) {
+        NSString *name = e[@"name"];
+        NSString *title = e[@"builtin"].boolValue ? [NSString stringWithFormat:@"%@  ·内置", name] : name;
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
             [self setPreferenceValue:name specifier:specifier];
             [self reloadSpecifier:specifier animated:YES];
+            [self reloadFolderButtonTitles];
+        }]];
+    }
+    if (DIDPref([specifier propertyForKey:@"key"])) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"恢复默认主题" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *a) {
+            [self setPreferenceValue:@"" specifier:specifier];
+            [self reloadSpecifier:specifier animated:YES];
+            [self reloadFolderButtonTitles];
         }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
@@ -130,11 +173,19 @@ static void DIDNotifyChanged(void) {
 
 - (void)reloadFolderButtonTitles {
     for (PSSpecifier *spec in [self specifiers]) {
-        if ([[spec propertyForKey:@"didFolderRow"] boolValue]) {
-            id v = DIDPref([spec propertyForKey:@"key"]);
-            NSString *name = ([v isKindOfClass:[NSString class]] && [v length]) ? v : @"未选择";
-            [spec setProperty:[NSString stringWithFormat:@"%@：%@", spec.name, name] forKey:@"label"];
+        if (![[spec propertyForKey:@"didFolderRow"] boolValue]) continue;
+        NSString *kind = [spec propertyForKey:@"didFolderKind"];
+        NSString *title = [spec propertyForKey:@"didTitle"];
+        id v = DIDPref([spec propertyForKey:@"key"]);
+        NSString *name = ([v isKindOfClass:[NSString class]] && [v length]) ? v : nil;
+        BOOL builtin = NO;
+        if (!name) {
+            name = DIDDefaultThemeName(kind);
+            builtin = YES;
         }
+        NSString *shown = name ? name : @"无可用主题";
+        [spec setProperty:[NSString stringWithFormat:@"%@    %@%@", title ?: spec.name,
+                           shown, builtin ? @"（默认）" : @""] forKey:@"label"];
     }
 }
 
@@ -148,7 +199,7 @@ static void DIDNotifyChanged(void) {
         NSMutableArray *specs = [NSMutableArray array];
 
         PSSpecifier *group = [PSSpecifier groupSpecifierWithName:@"灵动岛跳舞（纯净版）"];
-        [group setProperty:@"素材目录与常见跳舞插件完全一致：/var/mobile/DynamicIsland/{dance,eye,mask}，已下载的素材包可直接使用。"
+        [group setProperty:@"已内置 5 套跳舞、2 套写轮眼、2 套遮罩，装完即用。自己下载的素材也可以放到 /var/mobile/DynamicIsland/{dance,eye,mask}，会和内置主题一起出现在选择列表里。"
                    forKey:@"footerText"];
         [specs addObject:group];
         [specs addObject:[self switchRow:@"启用插件" key:@"shouldEnableCustomUI" def:YES]];
@@ -171,7 +222,7 @@ static void DIDNotifyChanged(void) {
         [specs addObject:[self sliderRow:@"垂直偏移" key:@"plugin3YOffset" def:0.0 min:-60.0 max:60.0]];
 
         group = [PSSpecifier groupSpecifierWithName:@"录屏写轮眼"];
-        [group setProperty:@"若已安装独立的“录屏写轮眼”插件，请保持本组关闭，避免两套素材重叠。" forKey:@"footerText"];
+        [group setProperty:@"若已安装独立的“录屏写轮眼”插件，请保持本组关闭，避免两套素材重叠；只装本插件的话可以打开。" forKey:@"footerText"];
         [specs addObject:group];
         [specs addObject:[self switchRow:@"启用写轮眼素材" key:@"enableEyeSprite" def:NO]];
         [specs addObject:[self folderRow:@"写轮眼素材" kind:@"eye" key:@"selectedEyeFolder"]];
