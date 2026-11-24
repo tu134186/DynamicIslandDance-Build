@@ -10,7 +10,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.5.0";
+static NSString *const DIDVersion     = @"2.5.1";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
 static NSString *const DIDLogPath     = @"/var/mobile/DynamicIslandDance.log";
@@ -320,17 +320,18 @@ static UIImageView *gSpinView;      // 圆形旋转的封面
 static DIDSpriteView *DIDSprite(BOOL eye) {
     DIDEnsureOverlay();
     if (!gStage) return nil;
-    DIDSpriteView **slot = eye ? &gEyeSprite : &gDanceSprite;
+    __strong DIDSpriteView **slot = eye ? &gEyeSprite : &gDanceSprite;
     if (!*slot) {
-        *slot = [[DIDSpriteView alloc] initWithFrame:CGRectZero];
-        (*slot).hidden = YES;
-        [gStage addSubview:*slot];
+        DIDSpriteView *fresh = [[DIDSpriteView alloc] initWithFrame:CGRectZero];
+        fresh.hidden = YES;
+        [gStage addSubview:fresh];
+        *slot = fresh;
     }
     return *slot;
 }
 
 static void DIDHideSprite(BOOL eye) {
-    DIDSpriteView **slot = eye ? &gEyeSprite : &gDanceSprite;
+    __strong DIDSpriteView **slot = eye ? &gEyeSprite : &gDanceSprite;
     if (!*slot) return;
     [(*slot) halt];
     (*slot).hidden = YES;
