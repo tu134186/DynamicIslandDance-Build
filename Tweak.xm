@@ -10,7 +10,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.6.1";
+static NSString *const DIDVersion     = @"2.6.2";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
 static NSString *const DIDLogPath     = @"/var/mobile/DynamicIslandDance.log";
@@ -229,6 +229,7 @@ static void DIDClearFrameCache(void) {
 #pragma mark - 覆盖层窗口
 
 // 独立 window 绘制素材：不会被灵动岛的黑色背板遮挡，也不受容器裁剪影响。
+static NSArray<UIWindow *> *DIDAllWindows(void);
 static UIWindow *gOverlay;
 static UIView *gStage;
 
@@ -575,7 +576,6 @@ static BOOL DIDPlaceDance(BOOL verbose) {
 
     UIView *bestPill = nil;
     CGRect bestVis = CGRectZero;
-    BOOL bestTagged = NO;
 
     for (UIView *pill in DIDPills()) {
         // 必须是音乐播放的岛；语音输入/导航/计时器等都带图片，不能靠"有图"判断
@@ -583,7 +583,7 @@ static BOOL DIDPlaceDance(BOOL verbose) {
         CGRect vis = CGRectZero;
         if (!DIDArtworkInPill(pill, &vis)) continue;
         if (vis.size.height < 16) continue;
-        bestPill = pill; bestVis = vis; bestTagged = YES;
+        bestPill = pill; bestVis = vis;
         break;
     }
     if (!bestPill) {
@@ -658,14 +658,13 @@ static BOOL DIDPlaceSpin(BOOL verbose) {
     UIView *bestPill = nil;
     CGRect bestVis = CGRectZero;
     UIImageView *bestArt = nil;
-    BOOL bestTagged = NO;
 
     for (UIView *pill in DIDPills()) {
         if (!DIDPillHasTag(pill, @"NowPlaying", 5)) continue;
         CGRect vis = CGRectZero;
         UIImageView *art = DIDArtworkInPill(pill, &vis);
         if (!art || vis.size.height < 16) continue;
-        bestPill = pill; bestVis = vis; bestArt = art; bestTagged = YES;
+        bestPill = pill; bestVis = vis; bestArt = art;
         break;
     }
     if (!bestPill) {
