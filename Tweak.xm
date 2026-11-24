@@ -11,7 +11,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"1.3.0";
+static NSString *const DIDVersion     = @"1.4.0";
 static NSString *const DIDPrefPath    = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultMediaRoot = @"/var/mobile/DynamicIsland";
@@ -344,18 +344,39 @@ static BOOL DIDAnyTagInSubtree(UIView *root, NSString *token, NSInteger depth) {
     return NO;
 }
 
-static BOOL DIDPillIsNowPlayingFast(UIView *pill) {
-    return DIDTagMatches(pill, @"NowPlaying") || DIDTagMatches(pill, @"ScreenRecording");
+// 每个容器的用途判定（1=正在播放 2=录屏），带 0.4s 缓存：
+// layoutSubviews / setFrame: 都是高频路径，不能每次都做深度子树扫描。
+static const void *DIDPillKindKey   = &DIDPillKindKey;
+static const void *DIDPillKindAtKey = &DIDPillKindAtKey;
+
+static NSInteger DIDPillKind(UIView *pill, BOOL force) {
+    if (!pill) return 0;
+    NSTimeInterval now = CACurrentMediaTime();
+    NSNumber *at = objc_getAssociatedObject(pill, DIDPillKindAtKey);
+    if (!force && at && now - at.doubleValue < 0.4) {
+        return [objc_getAssociatedObject(pill, DIDPillKindKey) integerValue];
+    }
+    BOOL np  = DIDTagMatches(pill, @"NowPlaying") || DIDAnyTagInSubtree(pill, @"NowPlaying", 2);
+    BOOL rec = DIDTagMatches(pill, @"ScreenRecording") || DIDAnyTagInSubtree(pill, @"ScreenRecording", 6);
+    NSInteger kind = (np ? 1 : 0) | (rec ? 2 : 0);
+    objc_setAssociatedObject(pill, DIDPillKindKey, @(kind), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(pill, DIDPillKindAtKey, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return kind;
 }
 
-static BOOL DIDPillIsNowPlaying(UIView *pill) {
-    if (DIDTagMatches(pill, @"NowPlaying")) return YES;
-    return DIDAnyTagInSubtree(pill, @"NowPlaying", 2);
-}
+static BOOL DIDPillIsNowPlaying(UIView *pill) { return (DIDPillKind(pill, NO) & 1) != 0; }
+static BOOL DIDPillIsRecording(UIView *pill) { return (DIDPillKind(pill, NO) & 2) != 0; }
 
-static BOOL DIDPillIsRecording(UIView *pill) {
-    if (DIDTagMatches(pill, @"ScreenRecording")) return YES;
-    return DIDAnyTagInSubtree(pill, @"ScreenRecording", 6);
+static void DIDInvalidatePillKinds(void) {
+    NSMutableArray<UIView *> *stack = [NSMutableArray array];
+    for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
+    while (stack.count) {
+        UIView *v = stack.lastObject; [stack removeLastObject];
+        if (objc_getAssociatedObject(v, DIDPillKindAtKey)) {
+            objc_setAssociatedObject(v, DIDPillKindAtKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        for (UIView *sub in v.subviews) [stack addObject:sub];
+    }
 }
 
 #pragma mark - 专辑封面圆形旋转
@@ -579,13 +600,14 @@ static CGRect DIDReshapedFrame(UIView *container, CGRect frame) {
     if (!DIDEnabled() || !DIDIOS17Adaptation()) return frame;
     CGFloat w = frame.size.width, h = frame.size.height;
     if (w < 1.0 || h < 1.0) return frame;
-    if (!DIDPillIsNowPlayingFast(container)) return frame;
+    NSInteger kind = DIDPillKind(container, NO);
+    if (kind == 0) return frame;
 
     if (w <= 50.0 && h >= 16.0 && h <= 60.0) {
         CGFloat side = MAX(h, 36.6667);
         return CGRectMake(CGRectGetMidX(frame) - side / 2.0, frame.origin.y, side, side);
     }
-    if (DIDTagMatches(container, @"NowPlaying") && w >= 170.0 && w <= 215.0 && h >= 24.0 && h <= 60.0) {
+    if ((kind & 1) && w >= 170.0 && w <= 215.0 && h >= 24.0 && h <= 60.0) {
         return CGRectMake(CGRectGetMidX(frame) - 193.0 / 2.0, frame.origin.y, 193.0, h);
     }
     return frame;
@@ -690,6 +712,7 @@ static void DIDApplySettingsChange(void) {
     DIDLog(@"settings changed");
 
     dispatch_async(dispatch_get_main_queue(), ^{
+        DIDInvalidatePillKinds();
         if (!DIDEnabled()) {
             DIDRemoveSprites();
             for (UIWindow *w in DIDAllWindows()) DIDStopAlbumRotation(w, 12);
@@ -726,6 +749,7 @@ static void DIDPreload(void) {
                                                       usingBlock:^(__unused NSNotification *n) {
             BOOL captured = [UIScreen mainScreen].isCaptured;
             DIDLog(@"capture changed -> %d", captured);
+            DIDInvalidatePillKinds();
             DIDScheduleScan(@"capture", captured ? 0.25 : 0.05);
             DIDScheduleScan(@"capture-late", 0.9);
         }];
