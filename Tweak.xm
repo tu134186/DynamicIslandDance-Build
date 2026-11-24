@@ -10,7 +10,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.6.0";
+static NSString *const DIDVersion     = @"2.6.1";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
 static NSString *const DIDLogPath     = @"/var/mobile/DynamicIslandDance.log";
@@ -255,7 +255,16 @@ static void DIDEnsureOverlay(void) {
         UIWindow *w = scene ? [[DIDOverlayWindow alloc] initWithWindowScene:scene]
                             : [[DIDOverlayWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
         w.frame = [UIScreen mainScreen].bounds;
-        w.windowLevel = 3500.0;
+        // 灵动岛/录屏指示器的窗口层级很高，覆盖层必须在它们之上，
+        // 否则素材会被黑色背板盖住（表现为"只露出一点红色"）。
+        CGFloat islandLevel = 0;
+        for (UIWindow *iw in DIDAllWindows()) {
+            if ([NSStringFromClass(iw.class) containsString:@"Aperture"] ||
+                [NSStringFromClass(iw.class) containsString:@"RecordingIndicator"]) {
+                islandLevel = MAX(islandLevel, iw.windowLevel);
+            }
+        }
+        w.windowLevel = MAX(islandLevel + 100.0, 10000000.0);
         w.backgroundColor = [UIColor clearColor];
         w.userInteractionEnabled = NO;
         w.hidden = NO;
@@ -368,10 +377,15 @@ static NSArray<UIWindow *> *DIDAllWindows(void) {
     return out;
 }
 
+// 必须走 window -> screen 两级换算：toView:nil 只到 window 坐标系，
+// 而灵动岛在独立 window 里，直接用会算错位置。
 static CGRect DIDScreenRect(UIView *v) {
     if (!v || !v.window) return CGRectZero;
     CGRect r = CGRectZero;
-    @try { r = [v convertRect:v.bounds toView:nil]; } @catch (...) { return CGRectZero; }
+    @try {
+        r = [v convertRect:v.bounds toView:v.window];
+        r = [v.window convertRect:r toWindow:nil];
+    } @catch (...) { return CGRectZero; }
     return r;
 }
 
@@ -564,13 +578,13 @@ static BOOL DIDPlaceDance(BOOL verbose) {
     BOOL bestTagged = NO;
 
     for (UIView *pill in DIDPills()) {
+        // 必须是音乐播放的岛；语音输入/导航/计时器等都带图片，不能靠"有图"判断
+        if (!DIDPillHasTag(pill, @"NowPlaying", 5)) continue;
         CGRect vis = CGRectZero;
         if (!DIDArtworkInPill(pill, &vis)) continue;
         if (vis.size.height < 16) continue;
-        BOOL tagged = DIDPillHasTag(pill, @"NowPlaying", 3);
-        if (bestPill && bestTagged && !tagged) continue;
-        bestPill = pill; bestVis = vis; bestTagged = tagged;
-        if (tagged) break;
+        bestPill = pill; bestVis = vis; bestTagged = YES;
+        break;
     }
     if (!bestPill) {
         DIDHideSprite(0);
@@ -585,15 +599,36 @@ static BOOL DIDPlaceDance(BOOL verbose) {
     CGFloat offX = DIDFloat(@"danceOffsetX", 0.0, -200.0, 200.0);
     CGFloat offY = DIDFloat(@"danceOffsetY", 0.0, -40.0, 40.0);
 
-    // 封面可见区域占哪一半，素材就放另一半
-    BOOL artLeft = CGRectGetMidX(bestVis) < CGRectGetMidX(pr);
-    CGFloat x = artLeft ? CGRectGetMaxX(pr) - side / 2.0 - 2.0
-                        : CGRectGetMinX(pr) + side / 2.0 + 2.0;
+    // 封面是岛端点被裁出的一个圆，直径等于岛高。
+    // 判断封面在左还是右：看封面视图在岛坐标系里的中心（不用可见区域，那会被整屏大图带偏）。
+    BOOL artLeft = YES;
+    @try {
+        UIView *pill = bestPill;
+        UIImageView *art = DIDArtworkInPill(pill, NULL);
+        if (art) {
+            CGRect af = [art convertRect:art.bounds toView:pill];
+            if (af.size.width > 0 && af.size.width <= pill.bounds.size.width + 4) {
+                artLeft = CGRectGetMidX(af) < pill.bounds.size.width / 2.0;
+            }
+        }
+    } @catch (...) {}
+
+    // 素材放在封面对面的端点圆内，不会落到岛外被黑底盖住
+    CGFloat radius = pr.size.height / 2.0;
+    CGFloat x = artLeft ? (CGRectGetMaxX(pr) - radius) : (CGRectGetMinX(pr) + radius);
     CGFloat y = CGRectGetMidY(pr);
-    CGRect frame = DIDSquareAround(CGPointMake(x + offX, y + offY), side);
+    x += offX;
+    y += offY;
+
+    // 夹在岛内：稍微放宽一点允许溢出，但不能整个跑到岛外
+    CGFloat minX = CGRectGetMinX(pr) + side / 2.0 - radius * 0.5;
+    CGFloat maxX = CGRectGetMaxX(pr) - side / 2.0 + radius * 0.5;
+    x = MAX(minX, MIN(maxX, x));
+
+    CGRect frame = DIDSquareAround(CGPointMake(x, y), side);
     DIDPlace(sp, frame, frames, DIDFloat(@"danceFPS", 12.0, 2.0, 30.0));
-    if (verbose) DIDLog(@"dance: pr=%@ vis=%@ frame=%@", NSStringFromCGRect(pr),
-                        NSStringFromCGRect(bestVis), NSStringFromCGRect(frame));
+    if (verbose) DIDLog(@"dance: pr=%@ side=%.1f artLeft=%d frame=%@",
+                        NSStringFromCGRect(pr), side, artLeft, NSStringFromCGRect(frame));
     return YES;
 }
 
@@ -626,13 +661,12 @@ static BOOL DIDPlaceSpin(BOOL verbose) {
     BOOL bestTagged = NO;
 
     for (UIView *pill in DIDPills()) {
+        if (!DIDPillHasTag(pill, @"NowPlaying", 5)) continue;
         CGRect vis = CGRectZero;
         UIImageView *art = DIDArtworkInPill(pill, &vis);
         if (!art || vis.size.height < 16) continue;
-        BOOL tagged = DIDPillHasTag(pill, @"NowPlaying", 3);
-        if (bestPill && bestTagged && !tagged) continue;
-        bestPill = pill; bestVis = vis; bestArt = art; bestTagged = tagged;
-        if (tagged) break;
+        bestPill = pill; bestVis = vis; bestArt = art; bestTagged = YES;
+        break;
     }
     if (!bestPill) {
         if (gSpinView) { gSpinView.hidden = YES; [gSpinView.layer removeAnimationForKey:@"did.rot"]; }
