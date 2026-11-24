@@ -81,8 +81,10 @@ static CGFloat DIDRotationDuration(void) {
 
 #pragma mark - 逐帧素材
 
-static NSArray<UIImage *> *gDIDFrames[2];
-static NSString *gDIDFrameKey[2];
+static NSArray<UIImage *> *gDIDFramesDance;
+static NSArray<UIImage *> *gDIDFramesEye;
+static NSString *gDIDFrameKeyDance;
+static NSString *gDIDFrameKeyEye;
 
 static NSString *DIDKindName(NSInteger kind) { return kind == 0 ? @"dance" : @"eye"; }
 
@@ -105,8 +107,10 @@ static NSArray<UIImage *> *DIDLoadFrames(NSInteger kind) {
     NSString *folder = DIDString(kind == 0 ? @"selectedDanceFolder" : @"selectedEyeFolder");
     if (folder.length == 0) return nil;
 
+    NSArray<UIImage *> *cached = kind == 0 ? gDIDFramesDance : gDIDFramesEye;
+    NSString *cachedKey = kind == 0 ? gDIDFrameKeyDance : gDIDFrameKeyEye;
     NSString *key = [NSString stringWithFormat:@"%ld|%@", (long)kind, folder];
-    if (gDIDFrames[kind] && [gDIDFrameKey[kind] isEqualToString:key]) return gDIDFrames[kind];
+    if (cached && [cachedKey isEqualToString:key]) return cached;
 
     NSString *dir = [DIDImageRoot stringByAppendingPathComponent:
                      [NSString stringWithFormat:@"%@/%@", DIDKindName(kind), folder]];
@@ -133,15 +137,16 @@ static NSArray<UIImage *> *DIDLoadFrames(NSInteger kind) {
         UIImage *img = [UIImage imageWithContentsOfFile:[dir stringByAppendingPathComponent:n]];
         if (img) [images addObject:img];
     }
-    gDIDFrames[kind] = images.count ? images : nil;
-    gDIDFrameKey[kind] = images.count ? key : nil;
+    NSArray<UIImage *> *result = images.count ? images : nil;
+    if (kind == 0) { gDIDFramesDance = result; gDIDFrameKeyDance = result ? key : nil; }
+    else           { gDIDFramesEye = result;   gDIDFrameKeyEye = result ? key : nil; }
     DIDLog(@"load %@ frames folder=%@ count=%lu", DIDKindName(kind), folder, (unsigned long)images.count);
-    return gDIDFrames[kind];
+    return result;
 }
 
 static void DIDClearFrameCache(void) {
-    gDIDFrames[0] = nil; gDIDFrames[1] = nil;
-    gDIDFrameKey[0] = nil; gDIDFrameKey[1] = nil;
+    gDIDFramesDance = nil; gDIDFramesEye = nil;
+    gDIDFrameKeyDance = nil; gDIDFrameKeyEye = nil;
 }
 
 #pragma mark - 逐帧视图
@@ -184,6 +189,23 @@ static void DIDClearFrameCache(void) {
 
 #pragma mark - 归属判定
 
+static NSArray<UIWindow *> *DIDAllWindows(void) {
+    NSMutableArray<UIWindow *> *out = [NSMutableArray array];
+    @try {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+            [out addObjectsFromArray:((UIWindowScene *)scene).windows];
+        }
+    } @catch (...) {}
+    if (out.count == 0) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        [out addObjectsFromArray:UIApplication.sharedApplication.windows];
+#pragma clang diagnostic pop
+    }
+    return out;
+}
+
 static UIView *DIDPillForView(UIView *v) {
     UIView *cur = v;
     for (NSInteger i = 0; i < 14 && cur; i++, cur = cur.superview) {
@@ -215,6 +237,10 @@ static BOOL DIDAnyTagInSubtree(UIView *root, NSString *token, NSInteger depth) {
         if (DIDAnyTagInSubtree(sub, token, depth - 1)) return YES;
     }
     return NO;
+}
+
+static BOOL DIDPillIsNowPlayingFast(UIView *pill) {
+    return DIDTagMatches(pill, @"NowPlaying") || DIDTagMatches(pill, @"ScreenRecording");
 }
 
 static BOOL DIDPillIsNowPlaying(UIView *pill) {
@@ -297,7 +323,7 @@ static void DIDApplyAlbumRotation(UIView *pill) {
     CGFloat side = MIN(b.width, b.height);
     if (side < 12) {
         CGSize pb = pill.bounds.size;
-        side = MIN(CGRectGetHeight(pb) - 6.0, CGRectGetWidth(pb) * 0.5);
+        side = MIN(pb.height - 6.0, pb.width * 0.5);
     }
     if (side < 12) return;
 
@@ -400,7 +426,7 @@ static void DIDRequestPlace(UIView *pill, NSInteger kind) {
 
 static void DIDRemoveSprites(void) {
     NSMutableArray<UIView *> *stack = [NSMutableArray array];
-    for (UIWindow *w in [UIApplication sharedApplication].windows) [stack addObject:w];
+    for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
     while (stack.count) {
         UIView *v = stack.lastObject; [stack removeLastObject];
         id d = objc_getAssociatedObject(v, DIDDanceSpriteKey);
@@ -419,13 +445,13 @@ static CGRect DIDReshapedFrame(UIView *container, CGRect frame) {
     if (!DIDEnabled() || !DIDIOS17Adaptation()) return frame;
     CGFloat w = frame.size.width, h = frame.size.height;
     if (w < 1.0 || h < 1.0) return frame;
-    if (!DIDPillIsNowPlaying(container) && !DIDPillIsRecording(container)) return frame;
+    if (!DIDPillIsNowPlayingFast(container)) return frame;
 
     if (w <= 50.0 && h >= 16.0 && h <= 60.0) {
         CGFloat side = MAX(h, 36.6667);
         return CGRectMake(CGRectGetMidX(frame) - side / 2.0, frame.origin.y, side, side);
     }
-    if (DIDPillIsNowPlaying(container) && w >= 170.0 && w <= 215.0 && h >= 24.0 && h <= 60.0) {
+    if (DIDTagMatches(container, @"NowPlaying") && w >= 170.0 && w <= 215.0 && h >= 24.0 && h <= 60.0) {
         return CGRectMake(CGRectGetMidX(frame) - 193.0 / 2.0, frame.origin.y, 193.0, h);
     }
     return frame;
@@ -532,11 +558,11 @@ static void DIDApplySettingsChange(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!DIDEnabled()) {
             DIDRemoveSprites();
-            for (UIWindow *w in [UIApplication sharedApplication].windows) DIDStopAlbumRotation(w, 12);
+            for (UIWindow *w in DIDAllWindows()) DIDStopAlbumRotation(w, 12);
             return;
         }
         NSMutableArray<UIView *> *stack = [NSMutableArray array];
-        for (UIWindow *w in [UIApplication sharedApplication].windows) [stack addObject:w];
+        for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
         NSMutableArray<UIView *> *pills = [NSMutableArray array];
         while (stack.count) {
             UIView *v = stack.lastObject; [stack removeLastObject];
