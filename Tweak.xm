@@ -222,14 +222,6 @@ static BOOL DIDTagMatches(UIView *v, NSString *token) {
     return [ident isKindOfClass:[NSString class]] && [ident containsString:token];
 }
 
-static BOOL DIDAnyTagInChain(UIView *v, NSString *token, NSInteger up) {
-    UIView *cur = v;
-    for (NSInteger i = 0; i < up && cur; i++, cur = cur.superview) {
-        if (DIDTagMatches(cur, token)) return YES;
-    }
-    return NO;
-}
-
 static BOOL DIDAnyTagInSubtree(UIView *root, NSString *token, NSInteger depth) {
     if (!root || depth < 0) return NO;
     if (DIDTagMatches(root, token)) return YES;
