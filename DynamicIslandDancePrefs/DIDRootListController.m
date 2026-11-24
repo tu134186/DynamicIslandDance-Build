@@ -94,6 +94,15 @@ static NSString *DIDDefaultTheme(NSString *kind) {
 
 @implementation DIDRootListController
 
+// PreferenceLoader 里按钮 cell 需要显式指定 target，否则点了没反应
+- (NSArray *)specifiers {
+    NSArray *list = [super specifiers];
+    for (PSSpecifier *spec in list) {
+        if ([spec propertyForKey:@"action"]) [spec setTarget:self];
+    }
+    return list;
+}
+
 #pragma mark - 主题行标题
 
 - (void)refreshThemeLabels {
@@ -113,6 +122,7 @@ static NSString *DIDDefaultTheme(NSString *kind) {
         }
         if (![spec.name isEqualToString:text]) [spec setProperty:text forKey:@"label"];
     }
+    if (![self isViewLoaded]) return;
     [self reloadSpecifiers];
 }
 
