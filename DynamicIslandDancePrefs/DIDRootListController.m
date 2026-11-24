@@ -99,7 +99,6 @@ static void DIDNotifyChanged(void) {
 
 - (void)showFolderPicker:(PSSpecifier *)specifier {
     NSString *kind = [specifier propertyForKey:@"didFolderKind"];
-    NSString *key = [specifier propertyForKey:@"key"];
     NSString *dir = [DIDMediaRoot stringByAppendingPathComponent:kind];
     NSArray *all = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL];
     NSMutableArray *folders = [NSMutableArray array];
