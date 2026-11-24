@@ -9,7 +9,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.0.0";
+static NSString *const DIDVersion     = @"2.0.1";
 static NSString *const DIDPrefPath    = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
@@ -435,13 +435,13 @@ static void DIDPlaceEyeSprite(void) {
     NSArray<UIView *> *dots = DIDRecordingDots();
     if (dots.count == 0) return;
 
-    UIView *best = nil; UIView *bestHost = nil; CGPoint bestCenter = CGPointZero; CGFloat bestSide = 0;
+    UIView *best = nil; UIView *bestHost = nil; CGPoint bestCenter = CGPointZero;
     for (UIView *dot in dots) {
-        UIView *host = nil; CGPoint c = CGPointZero; CGFloat side = 0;
-        if (!DIDDotPlacement(dot, &host, &c, &side)) continue;
+        UIView *host = nil; CGPoint c = CGPointZero; CGFloat dotSide = 0;
+        if (!DIDDotPlacement(dot, &host, &c, &dotSide)) continue;
         // 只认有实际尺寸的容器
         if (host.bounds.size.height < 16 || host.bounds.size.width < 16) continue;
-        best = dot; bestHost = host; bestCenter = c; bestSide = side;
+        best = dot; bestHost = host; bestCenter = c;
         break;
     }
     if (!best) return;
@@ -594,7 +594,7 @@ static void DIDApplyRotation(UIView *art) {
 static void DIDRotateIn(UIView *root, NSInteger depth) {
     if (!root || depth < 0) return;
     if ([root isKindOfClass:[UIImageView class]] && ((UIImageView *)root).image &&
-        [root.class.description.lowercaseString containsString:@"artwork"]) {
+        [NSStringFromClass(root.class).lowercaseString containsString:@"artwork"]) {
         DIDApplyRotation(root);
     }
     for (UIView *s in root.subviews) DIDRotateIn(s, depth - 1);
