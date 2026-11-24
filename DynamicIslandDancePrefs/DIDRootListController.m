@@ -12,11 +12,6 @@ static id DIDPref(NSString *key) {
     return CFBridgingRelease(v);
 }
 
-static BOOL DIDBoolPref(NSString *key, BOOL fallback) {
-    id v = DIDPref(key);
-    return v ? [v boolValue] : fallback;
-}
-
 static void DIDNotifyChanged(void) {
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                          (__bridge CFStringRef)DIDNotify, NULL, NULL, YES);
