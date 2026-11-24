@@ -2,7 +2,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 
 static NSString *const DIDDomain = @"com.minis.didance";
-static NSString *const DIDNotify = "com.minis.didance.changed";
+static CFStringRef const kDIDNotify = CFSTR("com.minis.didance.changed");
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
 
 static id DIDPref(NSString *key) {
@@ -17,7 +17,7 @@ static void DIDSetPref(NSString *key, id value) {
                              (__bridge CFStringRef)DIDDomain);
     CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                         (__bridge CFStringRef)DIDNotify, NULL, NULL, YES);
+                                         kDIDNotify, NULL, NULL, YES);
 }
 
 static NSString *DIDRoot(void) {
@@ -155,7 +155,7 @@ static NSString *DIDDefaultTheme(NSString *kind) {
             CFPreferencesSetAppValue((__bridge CFStringRef)key, NULL, (__bridge CFStringRef)DIDDomain);
             CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
             CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                                 (__bridge CFStringRef)DIDNotify, NULL, NULL, YES);
+                                                 kDIDNotify, NULL, NULL, YES);
             [self refreshThemeLabels];
         }]];
     }
@@ -195,7 +195,7 @@ static NSString *DIDDefaultTheme(NSString *kind) {
         CFPreferencesSetAppValue(CFSTR("mediaRoot"), NULL, (__bridge CFStringRef)DIDDomain);
         CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                             (__bridge CFStringRef)DIDNotify, NULL, NULL, YES);
+                                             kDIDNotify, NULL, NULL, YES);
         [self refreshThemeLabels];
     }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
@@ -208,7 +208,7 @@ static NSString *DIDDefaultTheme(NSString *kind) {
             CFPreferencesSetAppValue(CFSTR("mediaRoot"), NULL, (__bridge CFStringRef)DIDDomain);
             CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
             CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                                 (__bridge CFStringRef)DIDNotify, NULL, NULL, YES);
+                                                 kDIDNotify, NULL, NULL, YES);
         }
         [self refreshThemeLabels];
     }]];
