@@ -11,7 +11,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"1.1.0";
+static NSString *const DIDVersion     = @"1.2.0";
 static NSString *const DIDPrefPath    = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDImageRoot   = @"/var/mobile/DynamicIsland";
@@ -72,7 +72,7 @@ static BOOL DIDEnabled(void)              { return DIDBool(@"shouldEnableCustomU
 static BOOL DIDAlbumRotationEnabled(void) { return DIDBool(@"enableAlbumRotation", YES); }
 static BOOL DIDIOS17Adaptation(void)      { return DIDBool(@"enableIOS17Adaptation", YES); }
 static BOOL DIDDanceEnabled(void)         { return DIDBool(@"enableDanceSprite", YES); }
-static BOOL DIDEyeEnabled(void)           { return DIDBool(@"enableEyeSprite", NO); }
+static BOOL DIDEyeEnabled(void)           { return DIDBool(@"enableEyeSprite", YES); }
 
 static CGFloat DIDRotationDuration(void) {
     CGFloat speed = DIDFloat(@"albumRotationSpeed", 0.6, 0.05, 4.0);
@@ -491,6 +491,35 @@ static void DIDRequestPlace(UIView *pill, NSInteger kind) {
     });
 }
 
+static void DIDScanAllPills(void) {
+    NSMutableArray<UIView *> *stack = [NSMutableArray array];
+    for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
+    NSMutableArray<UIView *> *pills = [NSMutableArray array];
+    while (stack.count) {
+        UIView *v = stack.lastObject; [stack removeLastObject];
+        if ([NSStringFromClass(v.class) isEqualToString:@"SBSystemApertureContainerView"]) [pills addObject:v];
+        for (UIView *sub in v.subviews) [stack addObject:sub];
+    }
+    for (UIView *pill in pills) {
+        @try {
+            if (DIDPillIsNowPlaying(pill)) {
+                DIDApplyAlbumRotation(pill);
+                DIDDoPlace(pill, 0);
+            }
+            if (DIDEyeEnabled() && DIDPillIsRecording(pill)) DIDDoPlace(pill, 1);
+        } @catch (...) {}
+    }
+    DIDLog(@"scan pills=%lu", (unsigned long)pills.count);
+}
+
+static void DIDScheduleScan(NSString *reason, double delay) {
+    (void)reason;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        @try { DIDScanAllPills(); } @catch (...) {}
+    });
+}
+
 static void DIDRemoveSprites(void) {
     NSMutableArray<UIView *> *stack = [NSMutableArray array];
     for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
@@ -628,22 +657,7 @@ static void DIDApplySettingsChange(void) {
             for (UIWindow *w in DIDAllWindows()) DIDStopAlbumRotation(w, 12);
             return;
         }
-        NSMutableArray<UIView *> *stack = [NSMutableArray array];
-        for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
-        NSMutableArray<UIView *> *pills = [NSMutableArray array];
-        while (stack.count) {
-            UIView *v = stack.lastObject; [stack removeLastObject];
-            if ([NSStringFromClass(v.class) isEqualToString:@"SBSystemApertureContainerView"]) [pills addObject:v];
-            for (UIView *sub in v.subviews) [stack addObject:sub];
-        }
-        for (UIView *pill in pills) {
-            if (DIDPillIsNowPlaying(pill)) {
-                DIDApplyAlbumRotation(pill);
-                DIDDoPlace(pill, 0);
-            }
-            if (DIDEyeEnabled() && DIDPillIsRecording(pill)) DIDDoPlace(pill, 1);
-            [pill setNeedsLayout];
-        }
+        DIDScanAllPills();
     });
 }
 
@@ -661,12 +675,31 @@ static void DIDPreload(void) {
 %ctor {
     @autoreleasepool {
         DIDLog(@"===== DynamicIslandDance v%@ loaded (pid %d) =====", DIDVersion, getpid());
+        DIDLog(@"bundled root = %@", DIDBundledRoot() ?: @"(not found)");
+        DIDLog(@"themes dance=%@ eye=%@ mask=%@",
+               DIDAvailableThemes(0), DIDAvailableThemes(1), DIDAvailableThemes(2));
         int token = 0;
         notify_register_dispatch(DIDPrefNotify, &token, dispatch_get_main_queue(), ^(__unused int t) {
             DIDApplySettingsChange();
         });
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIScreenCapturedDidChangeNotification
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(__unused NSNotification *n) {
+            BOOL captured = [UIScreen mainScreen].isCaptured;
+            DIDLog(@"capture changed -> %d", captured);
+            DIDScheduleScan(@"capture", captured ? 0.25 : 0.05);
+            DIDScheduleScan(@"capture-late", 0.9);
+        }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(__unused NSNotification *n) {
+            DIDScheduleScan(@"active", 0.4);
+        }];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             DIDPreload();
+            DIDScheduleScan(@"launch", 0.5);
         });
     }
 }

@@ -8,6 +8,10 @@
 		<string>PSLinkCell</string>
 		<key>bundle</key>
 		<string>DynamicIslandDancePrefs</string>
+		<key>detail</key>
+		<string>DIDRootListController</string>
+		<key>isController</key>
+		<true/>
 		<key>label</key>
 		<string>灵动岛跳舞</string>
 		<key>icon</key>

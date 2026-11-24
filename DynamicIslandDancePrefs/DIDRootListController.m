@@ -223,9 +223,9 @@ static void DIDNotifyChanged(void) {
         [specs addObject:[self sliderRow:@"垂直偏移" key:@"plugin3YOffset" def:0.0 min:-60.0 max:60.0]];
 
         group = [PSSpecifier groupSpecifierWithName:@"录屏写轮眼"];
-        [group setProperty:@"若已安装独立的“录屏写轮眼”插件，请保持本组关闭，避免两套素材重叠；只装本插件的话可以打开。" forKey:@"footerText"];
+        [group setProperty:@"默认开启。若你还装了独立的“录屏写轮眼”插件，请把这一组关掉，否则两套素材会重叠。" forKey:@"footerText"];
         [specs addObject:group];
-        [specs addObject:[self switchRow:@"启用写轮眼素材" key:@"enableEyeSprite" def:NO]];
+        [specs addObject:[self switchRow:@"启用写轮眼素材" key:@"enableEyeSprite" def:YES]];
         [specs addObject:[self folderRow:@"写轮眼素材" kind:@"eye" key:@"selectedEyeFolder"]];
         [specs addObject:[self sliderRow:@"帧率" key:@"eyeFrameAnimationSpeed" def:12.0 min:1.0 max:60.0]];
         [specs addObject:[self sliderRow:@"素材大小" key:@"eyeAnimationSize" def:22.0 min:4.0 max:64.0]];
