@@ -1,6 +1,6 @@
 include $(THEOS)/makefiles/common.mk
 BUNDLE_NAME = DynamicIslandDancePrefs
-DynamicIslandDancePrefs_FILES = DIDRootListController.m
+DynamicIslandDancePrefs_FILES = DIDRootListController.m DIDAdjustCell.m
 DynamicIslandDancePrefs_INSTALL_PATH = /Library/PreferenceBundles
 DynamicIslandDancePrefs_RESOURCE_DIRS = Resources
 DynamicIslandDancePrefs_FRAMEWORKS = UIKit CoreFoundation

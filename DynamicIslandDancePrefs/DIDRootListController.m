@@ -11,13 +11,22 @@ static id DIDPref(NSString *key) {
     return CFBridgingRelease(v);
 }
 
+static void DIDPost(void) {
+    CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         kDIDNotify, NULL, NULL, YES);
+}
+
 static void DIDSetPref(NSString *key, id value) {
     CFPreferencesSetAppValue((__bridge CFStringRef)key,
                              (__bridge CFPropertyListRef)value,
                              (__bridge CFStringRef)DIDDomain);
-    CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                         kDIDNotify, NULL, NULL, YES);
+    DIDPost();
+}
+
+static void DIDRemovePref(NSString *key) {
+    CFPreferencesSetAppValue((__bridge CFStringRef)key, NULL, (__bridge CFStringRef)DIDDomain);
+    DIDPost();
 }
 
 static NSString *DIDRoot(void) {
@@ -40,7 +49,19 @@ static NSString *DIDBundledRoot(void) {
     return nil;
 }
 
-// 合并内置 + 用户目录，跳过空目录。元素：@{name, builtin}
+static BOOL DIDThemeUsable(NSString *kind, NSString *dir) {
+    if ([kind isEqualToString:@"mask"])
+        return [[NSFileManager defaultManager] fileExistsAtPath:
+                [dir stringByAppendingPathComponent:@"Mask.png"]];
+    for (NSString *f in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL]) {
+        NSString *e = f.pathExtension.lowercaseString;
+        if ([e isEqualToString:@"png"] || [e isEqualToString:@"jpg"] ||
+            [e isEqualToString:@"jpeg"] || [e isEqualToString:@"webp"]) return YES;
+    }
+    return NO;
+}
+
+// 合并内置 + 用户素材；空目录跳过
 static NSArray<NSDictionary *> *DIDThemes(NSString *kind) {
     NSMutableArray<NSDictionary *> *out = [NSMutableArray array];
     NSMutableSet<NSString *> *seen = [NSMutableSet set];
@@ -56,20 +77,7 @@ static NSArray<NSDictionary *> *DIDThemes(NSString *kind) {
         for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:root error:NULL]) {
             if ([name hasPrefix:@"."] || [seen containsObject:name]) continue;
             NSString *full = [root stringByAppendingPathComponent:name];
-            if (!DIDIsDir(full)) continue;
-
-            BOOL usable = NO;
-            if ([kind isEqualToString:@"mask"]) {
-                usable = [[NSFileManager defaultManager] fileExistsAtPath:
-                          [full stringByAppendingPathComponent:@"Mask.png"]];
-            } else {
-                for (NSString *f in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:full error:NULL]) {
-                    NSString *e = f.pathExtension.lowercaseString;
-                    if ([e isEqualToString:@"png"] || [e isEqualToString:@"jpg"] ||
-                        [e isEqualToString:@"jpeg"] || [e isEqualToString:@"webp"]) { usable = YES; break; }
-                }
-            }
-            if (!usable) continue;
+            if (!DIDIsDir(full) || !DIDThemeUsable(kind, full)) continue;
             [seen addObject:name];
             [out addObject:@{@"name": name, @"builtin": @(builtin)}];
         }
@@ -86,27 +94,37 @@ static NSString *DIDDefaultTheme(NSString *kind) {
     NSArray<NSString *> *preferred = [kind isEqualToString:@"dance"]
         ? @[@"notedrop", @"equalizer", @"cat", @"ghost", @"star"]
         : [kind isEqualToString:@"eye"] ? @[@"sharingan", @"pulse"] : @[@"circle", @"squircle"];
-    for (NSString *want in preferred) {
-        for (NSDictionary *d in all) if ([(NSString *)d[@"name"] isEqualToString:want]) return want;
-    }
+    for (NSString *want in preferred)
+        for (NSDictionary *d in all)
+            if ([(NSString *)d[@"name"] isEqualToString:want]) return want;
     return (NSString *)all.firstObject[@"name"];
 }
 
 @implementation DIDRootListController
 
-// PreferenceLoader 里按钮 cell 需要显式指定 target，否则点了没反应
+#pragma mark - 关键：必须显式加载 Root.plist（PreferenceLoader 不会自动加载）
+
 - (NSArray *)specifiers {
-    NSArray *list = [super specifiers];
-    for (PSSpecifier *spec in list) {
-        if ([spec propertyForKey:@"action"]) [spec setTarget:self];
+    if (!_specifiers) {
+        NSArray *loaded = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        if (loaded.count == 0) {
+            PSSpecifier *err = [PSSpecifier preferenceSpecifierNamed:@"设置加载失败（Root.plist 未读取）"
+                                                              target:self set:nil get:nil
+                                                            detail:nil cell:PSStaticTextCell edit:nil];
+            loaded = @[err];
+        }
+        _specifiers = [loaded mutableCopy];
+        for (PSSpecifier *spec in _specifiers) {
+            if ([spec propertyForKey:@"action"]) [spec setTarget:self];
+        }
     }
-    return list;
+    return _specifiers;
 }
 
-#pragma mark - 主题行标题
+#pragma mark - 主题行显示当前素材名
 
 - (void)refreshThemeLabels {
-    for (PSSpecifier *spec in [self specifiers]) {
+    for (PSSpecifier *spec in self.specifiers) {
         NSString *title = [spec propertyForKey:@"didTitle"];
         if (![title isKindOfClass:[NSString class]]) continue;
         NSString *kind = [spec propertyForKey:@"didKind"];
@@ -114,15 +132,11 @@ static NSString *DIDDefaultTheme(NSString *kind) {
         id v = DIDPref(key);
         BOOL custom = ([v isKindOfClass:[NSString class]] && [(NSString *)v length]) ? YES : NO;
         NSString *name = custom ? (NSString *)v : DIDDefaultTheme(kind);
-        NSString *text;
-        if (name.length) {
-            text = [NSString stringWithFormat:@"%@：%@%@", title, name, custom ? @"" : @"（默认）"];
-        } else {
-            text = [NSString stringWithFormat:@"%@：无素材", title];
-        }
-        if (![spec.name isEqualToString:text]) [spec setProperty:text forKey:@"label"];
+        NSString *text = name.length
+            ? [NSString stringWithFormat:@"%@：%@%@", title, name, custom ? @"" : @"（默认）"]
+            : [NSString stringWithFormat:@"%@：无素材", title];
+        [spec setProperty:text forKey:@"label"];
     }
-    if (![self isViewLoaded]) return;
     [self reloadSpecifiers];
 }
 
@@ -136,12 +150,12 @@ static NSString *DIDDefaultTheme(NSString *kind) {
     [self refreshThemeLabels];
 }
 
-#pragma mark - 选择主题
+#pragma mark - 选择素材
 
-- (void)presentThemes:(NSString *)kind key:(NSString *)key title:(NSString *)title specifier:(PSSpecifier *)specifier {
+- (void)presentThemesForKind:(NSString *)kind key:(NSString *)key title:(NSString *)title {
     NSArray<NSDictionary *> *entries = DIDThemes(kind);
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:title
-                                                                  message:nil
+                                                                  message:[NSString stringWithFormat:@"目录：%@/%@", DIDRoot(), kind]
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
     id current = DIDPref(key);
     for (NSDictionary *e in entries) {
@@ -150,46 +164,45 @@ static NSString *DIDDefaultTheme(NSString *kind) {
         NSString *label = [NSString stringWithFormat:@"%@%@%@", name,
                            [(NSNumber *)e[@"builtin"] boolValue] ? @"（内置）" : @"",
                            isCurrent ? @"  ✓" : @""];
-        [sheet addAction:[UIAlertAction actionWithTitle:label style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
+        [sheet addAction:[UIAlertAction actionWithTitle:label style:UIAlertActionStyleDefault
+                                               handler:^(__unused UIAlertAction *a) {
             DIDSetPref(key, name);
             [self refreshThemeLabels];
         }]];
     }
     if (entries.count == 0) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"没有找到素材"
-                                                  style:UIAlertActionStyleDefault handler:nil]];
+        [sheet addAction:[UIAlertAction actionWithTitle:@"没有找到素材" style:UIAlertActionStyleDefault handler:nil]];
     }
-    if (current) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"恢复默认"
-                                                  style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *a) {
-            CFPreferencesSetAppValue((__bridge CFStringRef)key, NULL, (__bridge CFStringRef)DIDDomain);
-            CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
-            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                                 kDIDNotify, NULL, NULL, YES);
-            [self refreshThemeLabels];
-        }]];
-    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"恢复默认" style:UIAlertActionStyleDestructive
+                                           handler:^(__unused UIAlertAction *a) {
+        DIDRemovePref(key);
+        [self refreshThemeLabels];
+    }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
 
     sheet.popoverPresentationController.sourceView = self.view;
-    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
-                                                               CGRectGetMaxY(self.view.bounds) - 60, 1, 1);
+    sheet.popoverPresentationController.sourceRect =
+        CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMaxY(self.view.bounds) - 60, 1, 1);
     [self presentViewController:sheet animated:YES completion:nil];
 }
 
 - (void)pickDanceTheme:(PSSpecifier *)specifier {
-    [self presentThemes:@"dance" key:@"selectedDanceFolder" title:@"跳舞素材" specifier:specifier];
+    (void)specifier;
+    [self presentThemesForKind:@"dance" key:@"selectedDanceFolder" title:@"跳舞素材"];
 }
 - (void)pickEyeTheme:(PSSpecifier *)specifier {
-    [self presentThemes:@"eye" key:@"selectedEyeFolder" title:@"录屏素材" specifier:specifier];
+    (void)specifier;
+    [self presentThemesForKind:@"eye" key:@"selectedEyeFolder" title:@"录屏素材"];
 }
 - (void)pickMaskTheme:(PSSpecifier *)specifier {
-    [self presentThemes:@"mask" key:@"selectedMaskFolder" title:@"遮罩素材" specifier:specifier];
+    (void)specifier;
+    [self presentThemesForKind:@"mask" key:@"selectedMaskFolder" title:@"遮罩素材"];
 }
 
-#pragma mark - 素材根目录
+#pragma mark - 素材目录
 
 - (void)editMediaRoot:(PSSpecifier *)specifier {
+    (void)specifier;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"素材根目录"
                                                                    message:@"下面自动使用 dance / eye / mask 三个子目录。"
                                                             preferredStyle:UIAlertControllerStyleAlert];
@@ -201,25 +214,18 @@ static NSString *DIDDefaultTheme(NSString *kind) {
         tf.clearButtonMode = UITextFieldViewModeWhileEditing;
         tf.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
     }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"默认" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *a) {
-        CFPreferencesSetAppValue(CFSTR("mediaRoot"), NULL, (__bridge CFStringRef)DIDDomain);
-        CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                             kDIDNotify, NULL, NULL, YES);
+    [alert addAction:[UIAlertAction actionWithTitle:@"默认" style:UIAlertActionStyleDestructive
+                                           handler:^(__unused UIAlertAction *a) {
+        DIDRemovePref(@"mediaRoot");
         [self refreshThemeLabels];
     }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
+    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault
+                                           handler:^(__unused UIAlertAction *a) {
         NSString *text = alert.textFields.firstObject.text ?: @"";
         text = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (text.length && ![text isEqualToString:DIDDefaultRoot]) {
-            DIDSetPref(@"mediaRoot", text);
-        } else {
-            CFPreferencesSetAppValue(CFSTR("mediaRoot"), NULL, (__bridge CFStringRef)DIDDomain);
-            CFPreferencesAppSynchronize((__bridge CFStringRef)DIDDomain);
-            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                                 kDIDNotify, NULL, NULL, YES);
-        }
+        if (text.length && ![text isEqualToString:DIDDefaultRoot]) DIDSetPref(@"mediaRoot", text);
+        else DIDRemovePref(@"mediaRoot");
         [self refreshThemeLabels];
     }]];
     [self presentViewController:alert animated:YES completion:nil];
