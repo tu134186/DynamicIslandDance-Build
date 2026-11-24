@@ -9,7 +9,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.1.0";
+static NSString *const DIDVersion     = @"2.1.1";
 static NSString *const DIDPrefPath    = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
@@ -657,7 +657,8 @@ static void DIDScan(void) {
     %orig;
     if (!DIDEnabled()) return;
     @try {
-        if (self.bounds.size.width < 16 || self.bounds.size.height < 14) return;
+        UIView *pill = (UIView *)self;
+        if (pill.bounds.size.width < 16 || pill.bounds.size.height < 14) return;
         if ([UIScreen mainScreen].isCaptured) DIDPlaceEye();
         DIDPlaceDance();
     } @catch (...) {}
