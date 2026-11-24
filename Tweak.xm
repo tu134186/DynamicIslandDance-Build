@@ -10,7 +10,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.5.1";
+static NSString *const DIDVersion     = @"2.6.0";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
 static NSString *const DIDLogPath     = @"/var/mobile/DynamicIslandDance.log";
