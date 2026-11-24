@@ -10,7 +10,7 @@
 #import <math.h>
 #import <stdio.h>
 
-static NSString *const DIDVersion     = @"2.3.0";
+static NSString *const DIDVersion     = @"2.4.0";
 static NSString *const DIDPrefPath    = @"/var/mobile/Library/Preferences/com.minis.didance.plist";
 static const char *     DIDPrefNotify = "com.minis.didance.changed";
 static NSString *const DIDDefaultRoot = @"/var/mobile/DynamicIsland";
@@ -109,13 +109,10 @@ static NSString *DIDMediaRootDir(void) {
 }
 
 static BOOL DIDEnabled(void)    { return DIDBool(@"shouldEnableCustomUI", YES); }
-static BOOL DIDSpriteOn(void)   { return DIDBool(@"enableSprite", YES); }
 static BOOL DIDRotationOn(void) { return DIDBool(@"enableAlbumRotation", YES); }
 static BOOL DIDMaskOn(void)     { return DIDBool(@"enableMaskLayer", YES); }
-static BOOL DIDReshapeOn(void)  { return DIDBool(@"enableIOS17Adaptation", NO); }
 static BOOL DIDEyeOn(void)      { return DIDBool(@"enableEyeSprite", YES); }
 static BOOL DIDDanceOn(void)    { return DIDBool(@"enableDanceSprite", YES); }
-static BOOL DIDHideDot(void)    { return DIDBool(@"hideNativeDot", YES); }
 
 #pragma mark - 素材文件
 
@@ -231,7 +228,10 @@ static NSString *DIDDefaultTheme(NSInteger kind) {
     NSArray<NSString *> *all = DIDAvailableThemes(kind);
     if (all.count == 0) return nil;
     NSArray<NSString *> *preferred = kind == 0 ? @[@"notedrop", @"equalizer", @"cat", @"ghost", @"star"]
-                                  : kind == 1 ? @[@"sharingan", @"pulse"] : @[@"circle", @"squircle"];
+                                  : kind == 1 ? @[@"three-tomoe", @"sharingan", @"itachi", @"sasuke",
+                                                  @"madara", @"obito", @"shisui", @"izuna",
+                                                  @"two-tomoe", @"one-tomoe", @"pulse"]
+                                              : @[@"circle", @"squircle"];
     for (NSString *n in preferred) if ([all containsObject:n]) return n;
     return all.firstObject;
 }
@@ -501,26 +501,38 @@ static UIView *DIDDotInsidePill(UIView *pill) {
     return nil;
 }
 
-static UIImageView *DIDArtworkIn(UIView *root) {
-    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:root];
-    UIImageView *fallback = nil;
+// 岛里的封面必须是尺寸合理的方形图；整屏大图（426x310 之类）一律排除
+static UIImageView *DIDArtworkIn(UIView *pill) {
+    CGSize limit = pill.bounds.size;
+    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:pill];
+    UIImageView *best = nil;
+    CGFloat bestScore = -1;
+
     while (stack.count) {
         UIView *v = stack.lastObject; [stack removeLastObject];
         if ([v isKindOfClass:[UIImageView class]]) {
             UIImageView *iv = (UIImageView *)v;
-            if (iv.image && iv.bounds.size.width >= 8 && iv.bounds.size.height >= 8) {
-                if ([NSStringFromClass(v.class).lowercaseString containsString:@"artwork"]) return iv;
-                if (!fallback) fallback = iv;
+            CGSize b = iv.bounds.size;
+            if (iv.image && b.width >= 8 && b.height >= 8) {
+                // 不能比岛大太多
+                BOOL fits = b.width <= limit.width + 8.0 && b.height <= limit.height + 8.0;
+                if (fits) {
+                    BOOL artworkClass = [NSStringFromClass(v.class).lowercaseString containsString:@"artwork"];
+                    // 越接近正方形、尺寸越接近岛高，越可能是封面
+                    CGFloat squareness = 1.0 - fabs(b.width - b.height) / MAX(b.width, b.height);
+                    CGFloat score = squareness * 2.0 + (artworkClass ? 1.0 : 0.0);
+                    if (score > bestScore) { bestScore = score; best = iv; }
+                }
             }
         }
         for (UIView *s in v.subviews) [stack addObject:s];
     }
-    return fallback;
+    return best;
 }
 
 #pragma mark - 贴图
 
-static void DIDAttach(DIDSpriteView *sp, UIView *host, CGPoint center, CGFloat side) {
+static void DIDAttachEx(DIDSpriteView *sp, UIView *host, CGPoint center, CGFloat side, BOOL clampToHost) {
     if (!sp || !host || side < 3.0) return;
     if (sp.superview != host) {
         [sp removeFromSuperview];
@@ -529,20 +541,30 @@ static void DIDAttach(DIDSpriteView *sp, UIView *host, CGPoint center, CGFloat s
     if (host.subviews.lastObject != sp) [host bringSubviewToFront:sp];
     CGFloat half = side / 2.0;
     CGPoint c = center;
-    c.x = MAX(half, MIN(MAX(half, host.bounds.size.width - half), c.x));
-    c.y = MAX(half, MIN(MAX(half, host.bounds.size.height - half), c.y));
+    if (clampToHost) {
+        c.x = MAX(half, MIN(MAX(half, host.bounds.size.width - half), c.x));
+        c.y = MAX(half, MIN(MAX(half, host.bounds.size.height - half), c.y));
+    }
     CGRect want = CGRectMake(c.x - half, c.y - half, side, side);
     if (!CGRectEqualToRect(sp.frame, want)) [UIView performWithoutAnimation:^{ sp.frame = want; }];
     sp.hidden = NO;
     sp.alpha = 1.0;
 }
 
+static void DIDAttach(DIDSpriteView *sp, UIView *host, CGPoint center, CGFloat side) {
+    DIDAttachEx(sp, host, center, side, YES);
+}
+
 static const void *kDotAlpha = &kDotAlpha;
 
-// 素材尺寸：可略超岛高（最多 1.2 倍），但不超出岛宽，避免被裁掉
+// 录屏素材：最大 = 岛高，也就是系统独立岛那个圆的直径，正好一样大
+static CGFloat DIDEyeSide(CGFloat configured, CGSize pill) {
+    return MAX(MIN(configured, pill.height), 4.0);
+}
+
+// 跳舞素材：可略超岛高，但不超出岛宽
 static CGFloat DIDSpriteSide(CGFloat configured, CGSize pill) {
-    CGFloat cap = MAX(pill.height * 1.2, 12.0);
-    CGFloat side = MIN(configured, cap);
+    CGFloat side = MIN(configured, MAX(pill.height * 1.2, 12.0));
     side = MIN(side, MAX(pill.width, 12.0));
     return MAX(side, 4.0);
 }
@@ -564,7 +586,7 @@ static void DIDRestoreDots(void) {
 #pragma mark - 录屏素材
 
 static BOOL DIDPlaceEye(BOOL verbose) {
-    if (!DIDEnabled() || !DIDSpriteOn() || !DIDEyeOn()) return NO;
+    if (!DIDEnabled() || !DIDEyeOn()) return NO;
     NSArray<UIImage *> *frames = DIDLoadFrames(1);
     if (frames.count == 0) return NO;
 
@@ -576,12 +598,12 @@ static BOOL DIDPlaceEye(BOOL verbose) {
         CGPoint c = CGPointZero;
         UIView *pill = DIDPillForDot(dot, &c);
         if (!pill) continue;
-        CGFloat side = DIDSpriteSide(DIDFloat(@"eyeSize", 22.0, 6.0, 48.0), pill.bounds.size);
+        CGFloat side = DIDEyeSide(DIDFloat(@"eyeSize", 36.7, 10.0, 36.7), pill.bounds.size);
         DIDSpriteView *sp = DIDSpriteFor(1, pill) ?: DIDNewSprite(1);
         sp.didAnchor = dot;
         DIDAttach(sp, pill, c, side);
-        [sp play:frames fps:DIDFloat(@"eyeFPS", 12.0, 2.0, 30.0)];
-        if (DIDHideDot() && !objc_getAssociatedObject(dot, kDotAlpha)) {
+        [sp play:frames fps:DIDFloat(@"eyeFPS", 16.0, 2.0, 30.0)];
+        if (!objc_getAssociatedObject(dot, kDotAlpha)) {
             objc_setAssociatedObject(dot, kDotAlpha, @(dot.alpha), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             dot.alpha = 0.02;
         }
@@ -604,7 +626,7 @@ static BOOL DIDPlaceEye(BOOL verbose) {
                 c = CGPointMake(CGRectGetMidX(local), CGRectGetMidY(local));
                 hasCenter = YES;
             }
-            if (DIDHideDot() && !objc_getAssociatedObject(dot, kDotAlpha)) {
+            if (!objc_getAssociatedObject(dot, kDotAlpha)) {
                 objc_setAssociatedObject(dot, kDotAlpha, @(dot.alpha), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 dot.alpha = 0.02;
             }
@@ -615,11 +637,11 @@ static BOOL DIDPlaceEye(BOOL verbose) {
             c = pw > ph * 2.0 ? CGPointMake(ph / 2.0, ph / 2.0)
                               : CGPointMake(pw / 2.0, ph / 2.0);
         }
-        CGFloat side = DIDSpriteSide(DIDFloat(@"eyeSize", 22.0, 6.0, 48.0), pill.bounds.size);
+        CGFloat side = DIDEyeSide(DIDFloat(@"eyeSize", 36.7, 10.0, 36.7), pill.bounds.size);
         DIDSpriteView *sp = DIDSpriteFor(1, pill) ?: DIDNewSprite(1);
         sp.didAnchor = dot ?: pill;
         DIDAttach(sp, pill, c, side);
-        [sp play:frames fps:DIDFloat(@"eyeFPS", 12.0, 2.0, 30.0)];
+        [sp play:frames fps:DIDFloat(@"eyeFPS", 16.0, 2.0, 30.0)];
         if (verbose) DIDLog(@"eye: tag->pill c={%.1f,%.1f} side=%.1f w=%.1f dot=%@",
                             c.x, c.y, side, pw, dot ? NSStringFromClass(dot.class) : @"none");
         return YES;
@@ -639,7 +661,7 @@ static BOOL DIDPlaceEye(BOOL verbose) {
 #pragma mark - 跳舞素材
 
 static BOOL DIDPlaceDance(BOOL verbose) {
-    if (!DIDEnabled() || !DIDSpriteOn() || !DIDDanceOn()) return NO;
+    if (!DIDEnabled() || !DIDDanceOn()) return NO;
     NSArray<UIImage *> *frames = DIDLoadFrames(0);
     if (frames.count == 0) return NO;
 
@@ -651,12 +673,9 @@ static BOOL DIDPlaceDance(BOOL verbose) {
     for (UIView *pill in pills) {
         UIImageView *art = DIDArtworkIn(pill);
         if (!art) continue;
-        // 暂停时封面会被收起（高度很小），跳过，避免素材压住暂停按钮
+        // 暂停时封面会被收起，跳过，避免素材压住暂停按钮
         if (art.bounds.size.height < 16 || art.hidden || art.alpha < 0.2) continue;
         BOOL tagged = DIDPillHasTag(pill, @"NowPlaying", 3);
-        BOOL artworkClass = [NSStringFromClass(art.class).lowercaseString containsString:@"artwork"];
-        if (!tagged && !artworkClass) continue;
-        // 优先带 NowPlaying 标记的岛
         if (bestPill && bestTagged && !tagged) continue;
         bestPill = pill; bestArt = art; bestTagged = tagged;
         if (tagged) break;
@@ -666,8 +685,8 @@ static BOOL DIDPlaceDance(BOOL verbose) {
             DIDLog(@"dance fail: pills=%lu", (unsigned long)pills.count);
             for (UIView *p in pills) {
                 UIImageView *a = DIDArtworkIn(p);
-                DIDLog(@"  pill id=%@ w=%.1f art=%@ size=%@",
-                       p.accessibilityIdentifier ?: @"-", p.bounds.size.width,
+                DIDLog(@"  pill id=%@ w=%.1f h=%.1f art=%@ size=%@",
+                       p.accessibilityIdentifier ?: @"-", p.bounds.size.width, p.bounds.size.height,
                        a ? NSStringFromClass(a.class) : @"none",
                        a ? NSStringFromCGSize(a.bounds.size) : @"-");
             }
@@ -677,21 +696,20 @@ static BOOL DIDPlaceDance(BOOL verbose) {
 
     CGRect ar = CGRectZero;
     @try { ar = [bestArt convertRect:bestArt.bounds toView:bestPill]; } @catch (...) { return NO; }
-    CGFloat side = DIDSpriteSide(DIDFloat(@"danceSize", 22.0, 6.0, 48.0), bestPill.bounds.size);
+    CGSize ps = bestPill.bounds.size;
+    CGFloat side = DIDSpriteSide(DIDFloat(@"danceSize", 22.0, 6.0, 48.0), ps);
     CGFloat offX = DIDFloat(@"danceOffsetX", 0.0, -200.0, 200.0);
     CGFloat offY = DIDFloat(@"danceOffsetY", 0.0, -60.0, 60.0);
 
     CGPoint c;
-    if (bestPill.bounds.size.width > bestPill.bounds.size.height * 2.0) {
-        // 宽岛：封面在一端，素材放它旁边空出来的那侧
-        BOOL artOnLeft = CGRectGetMidX(ar) < bestPill.bounds.size.width / 2.0;
-        c = CGPointMake(artOnLeft ? CGRectGetMaxX(ar) + side / 2.0 + 2.0
-                                  : CGRectGetMinX(ar) - side / 2.0 - 2.0,
-                        CGRectGetMidY(ar));
+    if (ps.width > ps.height * 2.0) {
+        // 宽岛：封面贴着一端，素材放另一端
+        BOOL artOnLeft = CGRectGetMidX(ar) < ps.width / 2.0;
+        c = CGPointMake(artOnLeft ? ps.width - side / 2.0 - 1.0 : side / 2.0 + 1.0,
+                        ps.height / 2.0);
     } else {
-        // 圆形小岛：放右下角外侧一点，不挡封面中心
-        c = CGPointMake(bestPill.bounds.size.width - side / 2.0 - 1.0,
-                        bestPill.bounds.size.height - side / 2.0 - 1.0);
+        // 圆形小岛：放右下外侧
+        c = CGPointMake(ps.width - side / 2.0 - 1.0, ps.height - side / 2.0 - 1.0);
     }
     c.x += offX;
     c.y += offY;
@@ -700,9 +718,8 @@ static BOOL DIDPlaceDance(BOOL verbose) {
     sp.didAnchor = bestArt;
     DIDAttach(sp, bestPill, c, side);
     [sp play:frames fps:DIDFloat(@"danceFPS", 12.0, 2.0, 30.0)];
-    if (verbose) DIDLog(@"dance: pill w=%.1f art=%@ c={%.1f,%.1f} side=%.1f",
-                        bestPill.bounds.size.width, NSStringFromClass(bestArt.class),
-                        c.x, c.y, side);
+    if (verbose) DIDLog(@"dance: w=%.1f art=%@ c={%.1f,%.1f} side=%.1f",
+                        ps.width, NSStringFromClass(bestArt.class), c.x, c.y, side);
     return YES;
 }
 
@@ -710,14 +727,14 @@ static BOOL DIDPlaceDance(BOOL verbose) {
 
 static void DIDReapSprites(void) {
     BOOL captureOn = [UIScreen mainScreen].isCaptured;
-    BOOL eyeAllowed = DIDEnabled() && DIDSpriteOn() && DIDEyeOn() && captureOn;
+    BOOL eyeAllowed = DIDEnabled() && DIDEyeOn() && captureOn;
 
     for (DIDSpriteView *sp in gSprites.allObjects) {
         BOOL keep;
         if (sp.didKind == 1) {
             keep = eyeAllowed;
         } else {
-            keep = DIDEnabled() && DIDSpriteOn() && DIDDanceOn();
+            keep = DIDEnabled() && DIDDanceOn();
             // 封面收起（暂停）或消失时不留素材
             UIView *anchor = sp.didAnchor;
             keep = keep && anchor && anchor.window && !anchor.hidden
@@ -755,7 +772,8 @@ static CALayer *DIDMaskLayer(CGSize size, NSString *folder) {
 }
 
 static void DIDApplyRotation(UIView *art, BOOL playing) {
-    if (!DIDRotationOn() || !DIDEnabled() || !playing) return;
+    (void)playing;
+    if (!DIDRotationOn() || !DIDEnabled()) return;
     if (!art.window || art.bounds.size.width < 12) return;
     CGFloat side = MIN(art.bounds.size.width, art.bounds.size.height);
     CALayer *l = art.layer;
@@ -777,41 +795,38 @@ static void DIDApplyRotation(UIView *art, BOOL playing) {
     }
 }
 
-static BOOL gPlaying = NO;
+// 旋转只在"封面可见"时保留：暂停时系统把封面收起，自然就不转了，
+// 不依赖媒体通知（那套通知在部分机型上收不到）。
+static void DIDSyncRotation(BOOL force) {
+    (void)force;
+    if (!DIDEnabled() || !DIDRotationOn()) {
+        NSMutableArray<UIView *> *stack = [NSMutableArray array];
+        for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
+        while (stack.count) {
+            UIView *v = stack.lastObject; [stack removeLastObject];
+            if ([v.layer animationForKey:@"did.rot"]) [v.layer removeAnimationForKey:@"did.rot"];
+            for (UIView *s in v.subviews) [stack addObject:s];
+        }
+        return;
+    }
 
-// 播放中才转；暂停立即停
-static void DIDSyncRotation(BOOL playing) {
-    if (gPlaying == playing && !playing) return;
-    gPlaying = playing;
-
+    NSMutableSet<UIView *> *live = [NSMutableSet set];
+    for (UIView *pill in DIDPills()) {
+        UIImageView *art = DIDArtworkIn(pill);
+        if (!art) continue;
+        if (art.bounds.size.height < 16 || art.hidden || art.alpha < 0.2) continue;
+        [live addObject:art];
+        DIDApplyRotation(art, YES);
+    }
+    // 不在 live 里的旧动画清掉
     NSMutableArray<UIView *> *stack = [NSMutableArray array];
     for (UIWindow *w in DIDAllWindows()) [stack addObject:w];
     while (stack.count) {
         UIView *v = stack.lastObject; [stack removeLastObject];
-        if ([v.layer animationForKey:@"did.rot"]) [v.layer removeAnimationForKey:@"did.rot"];
+        if ([v.layer animationForKey:@"did.rot"] && ![live containsObject:v])
+            [v.layer removeAnimationForKey:@"did.rot"];
         for (UIView *s in v.subviews) [stack addObject:s];
     }
-    if (!playing) return;
-
-    for (UIView *pill in DIDPills()) {
-        if (!DIDPillHasTag(pill, @"NowPlaying", 3)) continue;
-        UIImageView *art = DIDArtworkIn(pill);
-        if (art) DIDApplyRotation(art, YES);
-    }
-}
-
-#pragma mark - 岛形（只圆化紧凑小岛）
-
-static BOOL gInSetFrame = NO;
-
-static CGRect DIDReshapedFrame(UIView *container, CGRect frame) {
-    if (!DIDEnabled() || !DIDReshapeOn()) return frame;
-    CGFloat w = frame.size.width, h = frame.size.height;
-    if (w < 18.0 || w > 50.0) return frame;
-    if (h < 26.0 || h > 46.0) return frame;
-    CGFloat side = MAX(h, 36.6667);
-    if (fabs(w - side) < 0.5) return frame;
-    return CGRectMake(CGRectGetMidX(frame) - side / 2.0, frame.origin.y, side, side);
 }
 
 #pragma mark - 扫描
@@ -827,7 +842,7 @@ static void DIDScan(BOOL verbose) {
     if (captureOn) @try { DIDPlaceEye(verbose); } @catch (...) {}
     @try { DIDPlaceDance(verbose); } @catch (...) {}
     @try { DIDReapSprites(); } @catch (...) {}
-    @try { DIDSyncRotation(gPlaying); } @catch (...) {}
+    @try { DIDSyncRotation(NO); } @catch (...) {}
 }
 
 static void DIDScanSoon(double delay, BOOL verbose) {
@@ -851,14 +866,6 @@ static void DIDScanSoon(double delay, BOOL verbose) {
     } @catch (...) {}
 }
 
-- (void)setFrame:(CGRect)frame {
-    CGRect target = frame;
-    if (!gInSetFrame) @try { target = DIDReshapedFrame((UIView *)self, frame); } @catch (...) {}
-    gInSetFrame = YES;
-    %orig(target);
-    gInSetFrame = NO;
-}
-
 %end
 
 %hook SBRecordingIndicatorView
@@ -876,26 +883,21 @@ static void DIDScanSoon(double delay, BOOL verbose) {
 - (void)layoutSubviews {
     %orig;
     if (!DIDEnabled() || !DIDRotationOn()) return;
-    @try { DIDApplyRotation((UIView *)self, gPlaying); } @catch (...) {}
+    @try {
+        UIView *art = (UIView *)self;
+        if (art.bounds.size.height >= 16) DIDApplyRotation(art, YES);
+    } @catch (...) {}
 }
 
 %end
 
-#pragma mark - 播放状态
+#pragma mark - 媒体通知
 
+// 只用来触发重扫，播放/暂停的判断交给"封面是否可见"
 static void DIDObservePlayback(void) {
-    // 用媒体通知判断播放/暂停：暂停时不转、不放跳舞素材
     void (^handler)(NSNotification *) = ^(NSNotification *n) {
-        NSDictionary *info = n.userInfo;
-        id rate = info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"] ?: info[@"PlaybackRate"];
-        if (rate) {
-            BOOL playing = [rate doubleValue] > 0.01;
-            if (playing != gPlaying) {
-                gPlaying = playing;
-                DIDLog(@"playing -> %d", playing);
-            }
-        }
-        DIDScanSoon(0.05, NO);
+        (void)n;
+        DIDScanSoon(0.08, NO);
     };
     for (NSString *name in @[@"kMRMediaRemoteNowPlayingInfoDidChangeNotification",
                              @"_MRMediaRemoteNowPlayingInfoDidChange",

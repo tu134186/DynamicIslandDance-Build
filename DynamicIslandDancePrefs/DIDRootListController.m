@@ -93,7 +93,10 @@ static NSString *DIDDefaultTheme(NSString *kind) {
     if (all.count == 0) return nil;
     NSArray<NSString *> *preferred = [kind isEqualToString:@"dance"]
         ? @[@"notedrop", @"equalizer", @"cat", @"ghost", @"star"]
-        : [kind isEqualToString:@"eye"] ? @[@"sharingan", @"pulse"] : @[@"circle", @"squircle"];
+        : [kind isEqualToString:@"eye"]
+            ? @[@"three-tomoe", @"sharingan", @"itachi", @"sasuke", @"madara",
+                @"obito", @"shisui", @"izuna", @"two-tomoe", @"one-tomoe", @"pulse"]
+            : @[@"circle", @"squircle"];
     for (NSString *want in preferred)
         for (NSDictionary *d in all)
             if ([(NSString *)d[@"name"] isEqualToString:want]) return want;

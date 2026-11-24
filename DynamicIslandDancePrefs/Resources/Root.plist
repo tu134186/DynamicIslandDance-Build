@@ -6,12 +6,6 @@
 	<array>
 		<dict>
 			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>总开关</string>
-		</dict>
-		<dict>
-			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>label</key>
 			<string>开启插件</string>
@@ -24,19 +18,66 @@
 			<key>PostNotification</key>
 			<string>com.minis.didance.changed</string>
 		</dict>
+
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
+			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>在岛上显示素材</string>
+			<string>录屏素材</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>选择素材</string>
+			<key>didTitle</key>
+			<string>素材</string>
+			<key>didKind</key>
+			<string>eye</string>
+			<key>didKey</key>
+			<string>selectedEyeFolder</string>
+			<key>action</key>
+			<string>pickEyeTheme:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSStaticTextCell</string>
+			<key>label</key>
+			<string>大小</string>
 			<key>key</key>
-			<string>enableSprite</string>
+			<string>eyeSize</string>
 			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.minis.didance</string>
-			<key>PostNotification</key>
-			<string>com.minis.didance.changed</string>
+			<real>36.7</real>
+			<key>min</key>
+			<real>10</real>
+			<key>max</key>
+			<real>36.7</real>
+			<key>step</key>
+			<real>0.5</real>
+			<key>cellClass</key>
+			<string>DIDAdjustCell</string>
+			<key>height</key>
+			<integer>48</integer>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSStaticTextCell</string>
+			<key>label</key>
+			<string>转速</string>
+			<key>key</key>
+			<string>eyeFPS</string>
+			<key>default</key>
+			<real>16</real>
+			<key>min</key>
+			<real>2</real>
+			<key>max</key>
+			<real>30</real>
+			<key>step</key>
+			<real>1</real>
+			<key>cellClass</key>
+			<string>DIDAdjustCell</string>
+			<key>height</key>
+			<integer>48</integer>
 		</dict>
 
 		<dict>
@@ -44,28 +85,16 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>跳舞素材（音乐播放时）</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>label</key>
-			<string>启用跳舞素材</string>
-			<key>key</key>
-			<string>enableDanceSprite</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.minis.didance</string>
-			<key>PostNotification</key>
-			<string>com.minis.didance.changed</string>
+			<key>footerText</key>
+			<string>播放音乐时出现在专辑封面旁边，暂停即消失。</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>跳舞素材</string>
+			<string>选择素材</string>
 			<key>didTitle</key>
-			<string>跳舞素材</string>
+			<string>素材</string>
 			<key>didKind</key>
 			<string>dance</string>
 			<key>didKey</key>
@@ -83,11 +112,11 @@
 			<key>default</key>
 			<real>22</real>
 			<key>min</key>
-			<real>6</real>
+			<real>8</real>
 			<key>max</key>
-			<real>48</real>
+			<real>44</real>
 			<key>step</key>
-			<real>1</real>
+			<real>0.5</real>
 			<key>cellClass</key>
 			<string>DIDAdjustCell</string>
 			<key>height</key>
@@ -97,15 +126,15 @@
 			<key>cell</key>
 			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>左右位置</string>
+			<string>左右</string>
 			<key>key</key>
 			<string>danceOffsetX</string>
 			<key>default</key>
 			<real>0</real>
 			<key>min</key>
-			<real>-80</real>
+			<real>-200</real>
 			<key>max</key>
-			<real>80</real>
+			<real>200</real>
 			<key>step</key>
 			<real>1</real>
 			<key>cellClass</key>
@@ -117,15 +146,15 @@
 			<key>cell</key>
 			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>上下位置</string>
+			<string>上下</string>
 			<key>key</key>
 			<string>danceOffsetY</string>
 			<key>default</key>
 			<real>0</real>
 			<key>min</key>
-			<real>-30</real>
+			<real>-40</real>
 			<key>max</key>
-			<real>30</real>
+			<real>40</real>
 			<key>step</key>
 			<real>1</real>
 			<key>cellClass</key>
@@ -137,7 +166,7 @@
 			<key>cell</key>
 			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>帧率</string>
+			<string>转速</string>
 			<key>key</key>
 			<string>danceFPS</string>
 			<key>default</key>
@@ -158,104 +187,13 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>录屏素材</string>
-			<key>footerText</key>
-			<string>跟随系统录屏红点显示。若同时装了别的录屏插件，请关掉这一组。</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>label</key>
-			<string>启用录屏素材</string>
-			<key>key</key>
-			<string>enableEyeSprite</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.minis.didance</string>
-			<key>PostNotification</key>
-			<string>com.minis.didance.changed</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>录屏素材</string>
-			<key>didTitle</key>
-			<string>录屏素材</string>
-			<key>didKind</key>
-			<string>eye</string>
-			<key>didKey</key>
-			<string>selectedEyeFolder</string>
-			<key>action</key>
-			<string>pickEyeTheme:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSStaticTextCell</string>
-			<key>label</key>
-			<string>大小</string>
-			<key>key</key>
-			<string>eyeSize</string>
-			<key>default</key>
-			<real>22</real>
-			<key>min</key>
-			<real>6</real>
-			<key>max</key>
-			<real>48</real>
-			<key>step</key>
-			<real>1</real>
-			<key>cellClass</key>
-			<string>DIDAdjustCell</string>
-			<key>height</key>
-			<integer>48</integer>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSStaticTextCell</string>
-			<key>label</key>
-			<string>帧率</string>
-			<key>key</key>
-			<string>eyeFPS</string>
-			<key>default</key>
-			<real>12</real>
-			<key>min</key>
-			<real>2</real>
-			<key>max</key>
-			<real>30</real>
-			<key>step</key>
-			<real>1</real>
-			<key>cellClass</key>
-			<string>DIDAdjustCell</string>
-			<key>height</key>
-			<integer>48</integer>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>label</key>
-			<string>遮盖系统红点</string>
-			<key>key</key>
-			<string>hideNativeDot</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>com.minis.didance</string>
-			<key>PostNotification</key>
-			<string>com.minis.didance.changed</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
 			<string>专辑封面</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>label</key>
-			<string>旋转封面</string>
+			<string>圆形旋转</string>
 			<key>key</key>
 			<string>enableAlbumRotation</string>
 			<key>default</key>
@@ -275,11 +213,11 @@
 			<key>default</key>
 			<real>0.6</real>
 			<key>min</key>
-			<real>0.1</real>
+			<real>0.05</real>
 			<key>max</key>
-			<real>4</real>
+			<real>3</real>
 			<key>step</key>
-			<real>0.1</real>
+			<real>0.05</real>
 			<key>cellClass</key>
 			<string>DIDAdjustCell</string>
 			<key>height</key>
@@ -289,7 +227,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>label</key>
-			<string>使用形状遮罩</string>
+			<string>形状遮罩</string>
 			<key>key</key>
 			<string>enableMaskLayer</string>
 			<key>default</key>
@@ -303,9 +241,9 @@
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>遮罩素材</string>
+			<string>选择遮罩</string>
 			<key>didTitle</key>
-			<string>遮罩素材</string>
+			<string>遮罩</string>
 			<key>didKind</key>
 			<string>mask</string>
 			<key>didKey</key>
@@ -318,27 +256,15 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>其它</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>label</key>
-			<string>灵动岛圆化</string>
-			<key>key</key>
-			<string>enableIOS17Adaptation</string>
-			<key>default</key>
-			<false/>
-			<key>defaults</key>
-			<string>com.minis.didance</string>
-			<key>PostNotification</key>
-			<string>com.minis.didance.changed</string>
+			<string>素材目录</string>
+			<key>footerText</key>
+			<string>放进 eye / dance / mask 三个子目录即可出现在上面的选择列表里。</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>修改素材目录</string>
+			<string>修改目录</string>
 			<key>action</key>
 			<string>editMediaRoot:</string>
 		</dict>
