@@ -369,7 +369,7 @@ static NSString *DIDDefaultThemeName(NSString *kind) {
                                    footer:[NSString stringWithFormat:
                                            @"当前根目录：%@\n跳舞：%@/dance\n录屏：%@/eye\n遮罩：%@/mask\n内置素材：%@\n\n点上面一行可以改成任意路径（比如放到 App 的 Documents 里）。",
                                            DIDMediaRoot(), DIDMediaRoot(), DIDMediaRoot(), DIDMediaRoot(),
-                                           bundled ?: @"(未找到内置素材)"]];
+                                           bundled ?: @"(未找到内置素材)"]]];
         [specs addObject:[self buttonRow:@"修改素材根目录" action:@"editMediaRoot:" key:@"mediaRoot"]];
         [specs addObject:[self buttonRow:@"立即生效（不重启设置）" action:@"applyNow:" key:nil]];
 
