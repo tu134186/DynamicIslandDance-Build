@@ -1,0 +1,9 @@
+Package: com.minis.didance
+Name: 灵动岛跳舞（纯净版）
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 灵动岛专辑封面圆形旋转 + 跳舞逐帧动画 + iOS17 岛屿圆化。自研实现，无许可证校验、无设备指纹、无任何联网代码；素材目录与常见跳舞插件一致（/var/mobile/DynamicIsland）。
+Maintainer: Minis
+Author: Minis
+Section: Tweaks
+Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
